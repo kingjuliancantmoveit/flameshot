@@ -19,6 +19,7 @@
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QLabel>
 #include <QMimeData>
 #include <QNetworkAccessManager>
@@ -74,25 +75,12 @@ void ImgurUploader::handleReply(QNetworkReply* reply)
     m_spinner->deleteLater();
     if (reply->error() == QNetworkReply::NoError) {
         QJsonDocument response = QJsonDocument::fromJson(reply->readAll());
-        QJsonObject json = response.object();
-        QJsonObject data = json[QStringLiteral("data")].toObject();
-        m_imageURL.setUrl(data[QStringLiteral("link")].toString());
+        QJsonObject imageURL = response.object();
+        QJsonValue imageURLValue = imageURL.value("files");
+        QJsonArray imageURLArray = imageURLValue.toArray();
+        m_imageURL.setUrl(imageURLArray[0].toString());
+        // m_imageURL.setUrl(data[QStringLiteral("link")].toString());
 
-        auto deleteToken = data[QStringLiteral("deletehash")].toString();
-        m_deleteImageURL.setUrl(
-          QStringLiteral("https://imgur.com/delete/%1").arg(deleteToken));
-
-        // save history
-        QString imageName = m_imageURL.toString();
-        int lastSlash = imageName.lastIndexOf("/");
-        if (lastSlash >= 0) {
-            imageName = imageName.mid(lastSlash + 1);
-        }
-
-        // save image to history
-        History history;
-        imageName = history.packFileName("imgur", deleteToken, imageName);
-        history.save(m_pixmap, imageName);
 
         if (ConfigHandler().copyAndCloseAfterUploadEnabled()) {
             SystemNotification().sendMessage(
@@ -127,20 +115,10 @@ void ImgurUploader::upload()
     QBuffer buffer(&byteArray);
     m_pixmap.save(&buffer, "PNG");
 
-    QUrlQuery urlQuery;
-    urlQuery.addQueryItem(QStringLiteral("title"),
-                          QStringLiteral("flameshot_screenshot"));
-    QString description = FileNameHandler().parsedPattern();
-    urlQuery.addQueryItem(QStringLiteral("description"), description);
-
-    QUrl url(QStringLiteral("https://api.imgur.com/3/image"));
-    url.setQuery(urlQuery);
+    QUrl url(QStringLiteral("https://pomf.lain.la/upload.php"));
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       "application/application/x-www-form-urlencoded");
-    request.setRawHeader(
-      "Authorization",
-      QStringLiteral("Client-ID %1").arg(IMGUR_CLIENT_ID).toUtf8());
 
     m_NetworkAM->post(request, byteArray);
 }
@@ -201,10 +179,6 @@ void ImgurUploader::copyURL()
 
 void ImgurUploader::openDeleteURL()
 {
-    bool successful = QDesktopServices::openUrl(m_deleteImageURL);
-    if (!successful) {
-        m_notification->showMessage(tr("Unable to open the URL."));
-    }
 }
 
 void ImgurUploader::copyImage()
