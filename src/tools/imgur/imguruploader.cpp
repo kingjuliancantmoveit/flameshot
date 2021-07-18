@@ -20,6 +20,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QHttpMultiPart>
 #include <QLabel>
 #include <QMimeData>
 #include <QNetworkAccessManager>
@@ -76,12 +77,9 @@ void ImgurUploader::handleReply(QNetworkReply* reply)
     if (reply->error() == QNetworkReply::NoError) {
         QJsonDocument response = QJsonDocument::fromJson(reply->readAll());
         QJsonObject imageURL = response.object();
-        QJsonValue imageURLValue = imageURL.value("files");
-        QJsonArray imageURLArray = imageURLValue.toArray();
-        m_imageURL.setUrl(imageURLArray[0].toString());
-        // m_imageURL.setUrl(data[QStringLiteral("link")].toString());
-
-
+        QJsonArray imageFiles = imageURL["files"].toArray();
+        QJsonValue imageFile = imageFiles.first();
+        m_imageURL.setUrl(imageFile.toObject()["url"].toString());
         if (ConfigHandler().copyAndCloseAfterUploadEnabled()) {
             SystemNotification().sendMessage(
               QObject::tr("URL copied to clipboard."));
@@ -91,6 +89,7 @@ void ImgurUploader::handleReply(QNetworkReply* reply)
             onUploadOk();
         }
     } else {
+
         m_infoLabel->setText(reply->errorString());
     }
     new QShortcut(Qt::Key_Escape, this, SLOT(close()));
@@ -112,15 +111,25 @@ void ImgurUploader::startDrag()
 void ImgurUploader::upload()
 {
     QByteArray byteArray;
+
+    QHttpMultiPart *multiPart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+    QHttpPart imagePart;
+
+    imagePart.setHeader(QNetworkRequest::ContentDispositionHeader,QVariant("form-data; name=\"files[]\"; filename=\"1.jpg\""));
+    imagePart.setHeader(QNetworkRequest::ContentTypeHeader, QVariant("image/png"));
+
     QBuffer buffer(&byteArray);
     m_pixmap.save(&buffer, "PNG");
 
+    imagePart.setBody(byteArray);
+    multiPart->append(imagePart);
+
     QUrl url(QStringLiteral("https://pomf.lain.la/upload.php"));
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::ContentTypeHeader,
-                      "application/application/x-www-form-urlencoded");
+//    request.setHeader(QNetworkRequest::ContentTypeHeader,
+//                      "multipart/form-data");
 
-    m_NetworkAM->post(request, byteArray);
+    m_NetworkAM->post(request, multiPart);
 }
 
 void ImgurUploader::onUploadOk()
